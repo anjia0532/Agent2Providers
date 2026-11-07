@@ -473,7 +473,7 @@ mod tests {
             "prompt_cache_key": "session-cache-key",
             "unknown_field": true,
         });
-        let outbound = prepare_body(&body, "solo", "");
+        let outbound = prepare_body(&body, &Route::fallback("solo", ""), "").unwrap();
 
         assert_eq!(outbound["prompt_cache_key"], "session-cache-key");
         assert!(outbound.get("unknown_field").is_none());

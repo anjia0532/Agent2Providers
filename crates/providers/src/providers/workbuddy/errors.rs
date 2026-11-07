@@ -81,6 +81,16 @@ fn restricted(body: &Value) -> bool {
     }
 }
 
+/// 未批准渠道拒绝（11-128 + 明确文案）。
+///
+/// 同一业务码也用于其他请求校验（多为提示词命中敏感词审核）；**只有**带
+/// `unapproved channel` 文案的那一支是渠道校验失败 —— 上游明确要求不重试，
+/// 且它不该被 [`classify`] 里共用的「内容审核」判据吸收成 `ContentBlocked`
+/// （那会触发降级重发，反而把拦截窗口拉长）。
+pub(super) fn is_channel_rejection(body: &Value) -> bool {
+    code(body) == Some(11_128) && message(body).to_ascii_lowercase().contains("unapproved channel")
+}
+
 fn transient(code: Option<i64>) -> bool {
     matches!(code, Some(14003 | 6001 | 6002 | 6005 | 6006))
 }
@@ -112,6 +122,16 @@ pub(super) fn classify(status: u16, body: &Value) -> proto::ErrorClass {
             Some(14015 | 14016 | 14017 | 11115 | 11101 | 11133 | 11158)
         )
     {
+        return proto::ErrorClass::Fatal {
+            status: status.max(400),
+            message,
+            upstream_code: code,
+        };
+    }
+    // 未批准渠道拒绝（11-128 + 明确文案）：终态，不重试、不换提示词。
+    // 这一支必须排在下面共用的「内容审核」判据之前 —— 否则会被吸收成
+    // ContentBlocked，触发降级重发，反而把拦截窗口拉长。
+    if is_channel_rejection(body) {
         return proto::ErrorClass::Fatal {
             status: status.max(400),
             message,

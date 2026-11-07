@@ -566,6 +566,11 @@ impl Provider for WorkBuddyProvider {
         if code != Some(RATE_LIMIT_CODE) {
             return None;
         }
+        // 未批准渠道拒绝（11-128 + 明确文案）：上游明确要求不重试，
+        // 且重发只会把拦截窗口拉长 —— 与「敏感词拦截值得退避」是两件事。
+        if errors::is_channel_rejection(error_body) {
+            return None;
+        }
         if attempt >= budget {
             return None;
         }
@@ -847,4 +852,59 @@ async fn default_session_token(ctx: &PluginCtx, region: Region) -> Result<String
         return Err("当前没有可用登录态：请先在桌面端完成登录".to_string());
     }
     Ok(token)
+}
+
+#[cfg(test)]
+mod channel_rejection_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// 未批准渠道拒绝（11_128 + `unapproved channel` 文案）：
+    /// 必须是**终态**（`Fatal`），且不再给退避建议 ——
+    /// 上游明确要求不重试，重发只会把拦截窗口拉长。
+    #[test]
+    fn unapproved_channel_is_terminal_for_both_editions() {
+        let error = json!({
+            "code": 11_128,
+            "message": "Illegal API invocation from an unapproved channel",
+        });
+
+        for region in Region::ALL {
+            let provider = WorkBuddyProvider::new(region);
+            match provider.classify(400, &error) {
+                proto::ErrorClass::Fatal {
+                    upstream_code: Some(11_128),
+                    message,
+                    ..
+                } => assert!(message.contains("unapproved channel")),
+                other => panic!("expected terminal channel rejection, got {other:?}"),
+            }
+            assert!(Provider::retry_advice(&provider, &error, 1, 3).is_none());
+        }
+    }
+
+    /// 同一业务码的其他响应（无渠道文案）保持既有的内容审核与降级行为。
+    #[test]
+    fn other_11_128_responses_keep_the_existing_retry_advice() {
+        let provider = WorkBuddyProvider::new(Region::Cn);
+        let error = json!({ "code": 11_128, "message": "blocked by security policy" });
+
+        assert!(matches!(
+            provider.classify(400, &error),
+            proto::ErrorClass::ContentBlocked { .. }
+        ));
+        assert!(Provider::retry_advice(&provider, &error, 1, 3).is_some());
+    }
+
+    /// 普通内容策略错误（无业务码）继续走既有的降级路径。
+    #[test]
+    fn ordinary_content_policy_errors_keep_the_existing_degrade_path() {
+        let provider = WorkBuddyProvider::new(Region::Cn);
+        let error = json!({ "message": "blocked by security policy" });
+
+        assert!(matches!(
+            provider.classify(400, &error),
+            proto::ErrorClass::ContentBlocked { .. }
+        ));
+    }
 }
