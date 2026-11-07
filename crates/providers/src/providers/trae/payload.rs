@@ -90,6 +90,9 @@ pub fn prepare_body(source: &Value, route: &Route, session: &str) -> Result<Valu
             out.insert("parallel_tool_calls".to_string(), parallel.clone());
         }
     }
+    if let Some(prompt_cache_key) = obj.get("prompt_cache_key").filter(|value| !value.is_null()) {
+        out.insert("prompt_cache_key".to_string(), prompt_cache_key.clone());
+    }
     for key in SAMPLING_KEYS {
         if let Some(number) = obj.get(key).filter(|value| value.is_number()) {
             out.insert(key.to_string(), number.clone());
@@ -457,3 +460,23 @@ fn normalize_tools(obj: &mut Value) {
     }
     obj["tools"] = Value::Array(kept);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prepare_body_preserves_prompt_cache_key() {
+        let body = json!({
+            "model": "deepseek-v4.1-flash-solo",
+            "messages": [{"role": "user", "content": [{"type": "text", "text": "hi"}]}],
+            "prompt_cache_key": "session-cache-key",
+            "unknown_field": true,
+        });
+        let outbound = prepare_body(&body, "solo", "");
+
+        assert_eq!(outbound["prompt_cache_key"], "session-cache-key");
+        assert!(outbound.get("unknown_field").is_none());
+    }
+}
+
