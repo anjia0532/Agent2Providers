@@ -184,6 +184,28 @@ impl Provider for LingxiProvider {
         Ok(account::identity_of(sid))
     }
 
+    /// `auth.methods`：界面据此渲染「添加账号」表单。
+    ///
+    /// 不申报时网关回 501，面板只留一个「手动凭证 JSON」文本框 —— 用户看到
+    /// 「插件未实现 auth.methods」，而实际上粘贴 Cookie 的归一化是完整的，
+    /// 只是少说了这一句。申报之后界面直接给一个 Cookie 输入框。
+    fn admin_action<'a>(
+        &'a self,
+        _ctx: &'a PluginCtx,
+        _account: &'a str,
+        action: &'a str,
+        _payload: &'a Value,
+    ) -> SendFuture<'a, Value> {
+        Box::pin(async move {
+            match action {
+                "auth.methods" => Ok(login_methods()),
+                _ => Err(agent2api_provider_sdk::unsupported(format!(
+                    "WPS 灵犀不支持管理动作「{action}」"
+                ))),
+            }
+        })
+    }
+
     /// 上游错误分类。Cookie 失效没有刷新接口，`TokenExpired` 只会白试一次，
     /// 所以 401/403 直接按 Fatal 交回（文案指路重新粘贴）。
     fn classify(&self, status: u16, body: &Value) -> proto::ErrorClass {
@@ -210,6 +232,32 @@ impl Provider for LingxiProvider {
             _ => proto::ErrorClass::Fatal { status, message, upstream_code: None },
         }
     }
+}
+
+/// `auth.methods` 的返回（`type: "api"` = 填写凭证）。
+///
+/// 灵犀只有一条入口：粘贴网页登录态的 `wps_sid` Cookie（约一年有效，
+/// 没有刷新接口）。所以只申报一条 `api` 方式，一个 secret 输入框。
+fn login_methods() -> Value {
+    serde_json::json!({ "methods": [{
+        "methodIndex": 0,
+        "type": "api",
+        "label": "WPS 灵犀 Cookie",
+        "instructions": "在浏览器登录 WPS 后，从开发者工具复制整段 Cookie（含 wps_sid=…），或只填 wps_sid 的值。登录态约一年有效，失效后需要重新粘贴。",
+        "prompts": [{
+            "key": "cookie",
+            "type": "text",
+            "label": "Cookie 或 wps_sid",
+            "placeholder": "wps_sid=…",
+            "secret": true,
+            "optional": false
+        }],
+        // `api` 方式不能用本机导入、不能要求内嵌窗口（网关会以 502 拒掉）
+        "localOnly": false,
+        "manualCallback": false,
+        "callbackInput": "url",
+        "embeddedOnly": false
+    }] })
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@
 //!
 //! 代理口径与别家一致：账号级代理（`req.proxy`）优先，其次网关握手给的
 //! `env.proxy`（空串 = 直连，`direct` = 显式直连），两者都没有就直连 ——
-//! 这条判断**全部交给 [`crate::http::client`]**，不要在本地再写一遍：
+//! 这条判断**全部交给 [`crate::http::control_client`]**，不要在本地再写一遍：
 //! 插件开了 `system-proxy` 特性，漏掉 `no_proxy()` 会让「直连」悄悄改走
 //! 用户系统里配的代理（症状是「设了账号代理反而更慢」）。
 
@@ -15,9 +15,14 @@ use super::constants;
 /// 20 秒；一次对话可能包含长思考与多轮工具，按 10 分钟给。
 const STREAM_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
 
-/// 取一个客户端（按代理缓存、连接复用，口径见 [`crate::http::client`]）。
+/// 取一个客户端（按代理缓存、连接复用，口径见 [`crate::http::control_client`]）。
+///
+/// ⚠️ 原 PR 用的是 `crate::http::client`，那是旧 main 的名字；当前插件 SDK
+/// 把它拆成了 `control_client`（20s 控制面超时）与 `stream_client`（流式）。
+/// 灵犀的流式请求在 [`post_stream`] 里自带 `STREAM_TIMEOUT`，所以这里统一用
+/// 控制面客户端即可，不必再取两个。
 pub fn build_client(proxy: Option<&proto::WireProxy>, env_proxy: &str) -> reqwest::Client {
-    crate::http::client(proxy, env_proxy)
+    crate::http::control_client(proxy, env_proxy)
 }
 
 /// 非 2xx 的文案（401/403 顺手给「重新粘贴 Cookie」的指路）。

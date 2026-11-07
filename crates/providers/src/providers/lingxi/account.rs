@@ -77,6 +77,13 @@ pub fn normalize(input: &proto::NormalizeInput) -> Result<proto::NormalizedAccou
         }
     };
 
+    // `auth.methods` 申报的 `api` 方式：网关把表单字段装在 `inputs` 下
+    // （见 `api::accounts` 的 `NormalizeSource::Manual` 组装），键名就是
+    // `login_methods()` 里 prompts 的 `key`。
+    let payload = payload
+        .get("inputs")
+        .filter(|inputs| inputs.is_object())
+        .unwrap_or(&payload);
     let raw = ["cookie", "wps_sid", "sid", "token", "accessToken"]
         .iter()
         .find_map(|key| payload.get(*key).and_then(Value::as_str))
