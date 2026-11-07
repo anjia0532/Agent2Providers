@@ -18,11 +18,17 @@ pub(super) fn classify(status: u16, body: &Value) -> proto::ErrorClass {
     if code == Some(3007) {
         captcha::note_challenge_and_require_token();
     }
-    let hint = if risk_rejected {
-        plan::code_hint(3012)
+    // 3012 的文案要带**当前生效的客户端版本号**（issue #35：上游拿
+    // `X-ZCode-App-Version` 当推理准入判据，而用户看不到这个值时几乎无法
+    // 自查）。所以这一档单独走动态文案，其余仍用静态表。
+    let hint: Option<String> = if risk_rejected || code == Some(3012) {
+        Some(plan::risk_rejection_hint())
     } else {
-        code.and_then(plan::code_hint).or_else(|| {
-            (status == 429 || code == Some(1005)).then(|| plan::quota_hint(raw)).flatten()
+        code.and_then(plan::code_hint).map(str::to_string).or_else(|| {
+            (status == 429 || code == Some(1005))
+                .then(|| plan::quota_hint(raw))
+                .flatten()
+                .map(str::to_string)
         })
     };
     let message = match hint {

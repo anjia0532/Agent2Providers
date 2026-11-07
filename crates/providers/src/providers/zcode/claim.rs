@@ -140,7 +140,11 @@ const REQUEST_TIMEOUT_MS: u64 = 15_000;
 /// 空 `plans`，所以这张表要跟着官方 changelog（zcode.z.ai/cn/changelog）
 /// 一起更新；排障时也可以先用 `ZCODE_APP_VERSION` 环境变量试几个版本，
 /// 不必改代码重发版。
-const DEFAULT_APP_VERSION: &str = "3.18.0";
+/// 编译期默认客户端版本。
+///
+/// `pub(super)` 是为了让 `plan.rs` 的 3012 文案能区分「用的是默认值」还是
+/// 「设置页/env 覆盖过」（issue #35：那个覆盖值完全静默，是排障盲区）。
+pub(super) const DEFAULT_APP_VERSION: &str = "3.18.0";
 
 /// 探测与领取的路径（参考实现 `client.ts` 的常量）
 const PREVIEW_PATH: &str = "/api/v1/zcode-plan/billing/preview";

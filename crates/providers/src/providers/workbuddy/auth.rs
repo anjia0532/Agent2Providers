@@ -254,19 +254,22 @@ let url = context.auth_url("/plugin/auth/token/refresh");
                 GatewayError::with_status(502, format!("token 续期失败: {error}"))
             }
         })?;
-    // ── 404 / 405 单独说清楚（issue #381）─────────────────────────
-    // 续期端点存在（社区实测它回 400「refreshToken is empty」），所以 404
-    // 几乎只意味着一件事：**这个账号的 endpoint 指错了站点**（例如国际版
-    // 账号的 endpoint 是空串，插件回落到国内版）。这种情况下重新登录、重新
-    // 导入凭证都修不好 —— 必须改端点。原来它和「凭证被作废」共用一句话，
-    // 把用户往错误的方向带。
+    // ── 404 / 405 单独说清楚（issue #381 / #38）────────────────────
+    // 续期路由是 `{endpoint}/v2/plugin/auth/token/refresh`（`/plugin` 段不可
+    // 省，issue #38 实测少了它整条路由 404）。所以 404 只剩两种可能，**不能
+    // 直接断言「地区不符」**（#38 反馈：那句文案把排查方向带偏了）：
+    //   ① 这个账号的 endpoint 指错了站点（国际版账号 endpoint 为空时回落国内版）；
+    //   ② 上游又改了路由 —— 那种情况下换端点也没用。
+    // 文案把两条都列出来，并给出可自查的那条命令。
     if matches!(response.status, 404 | 405) {
         return Err(GatewayError::with_status(
             i32::from(response.status),
             format!(
-                "续期接口不存在（HTTP {}，请求地址 {url}）：通常是账号的端点（endpoint）\
-                 与账号所在地区不符，而不是凭证失效。请检查该账号的 endpoint 配置\
-                 （国际版应为 https://www.workbuddy.ai）",
+                "续期接口不存在（HTTP {}，请求地址 {url}）。两种可能：\
+                 ① 该账号的端点（endpoint）与账号所在地区不符 —— 国际版应为 \
+                 https://www.workbuddy.ai，国内版为 https://www.workbuddy.cn；\
+                 ② 上游调整了续期路由（插件需要更新）。\
+                 可先自查端点是否与账号地区一致；端点无误则该走 ②",
                 response.status
             ),
         ));

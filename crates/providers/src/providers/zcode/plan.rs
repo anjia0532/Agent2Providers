@@ -20,17 +20,51 @@ const MESSAGES_PATH: &str = "/anthropic/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 const ANTHROPIC_SDK_UA: &str = "ai-sdk/anthropic/3.0.81";
 
+/// 风控拒绝（3012）的提示文案 —— **带上当前生效的客户端版本号**（issue #35）。
+///
+/// ── 为什么必须把版本号写进错误正文 ────────────────────────────
+/// 上游把 `X-ZCode-App-Version` 当作**推理准入判据**：实测 3.17.0 起一律
+/// 405/3012，而 3.16.2 及以下正常（见 issue #35 的单变量阶梯）。
+/// 这个值有三个来源（`ZCODE_APP_VERSION` 环境变量 > 设置页 > 编译期默认），
+/// 排障时用户看不到它 —— 有一条现成的通道就是因为**排障时设过一次 env
+/// 后忘删**而整条打死，绕了三轮才找到。所以 3012 时把实际取值直接摊在
+/// 文案里，用户一眼能看出「是不是版本号超档」。
+pub(super) fn risk_rejection_hint() -> String {
+    let version = super::claim::app_version();
+    let env_override = std::env::var("ZCODE_APP_VERSION")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let source = match env_override {
+        Some(_) => "环境变量 ZCODE_APP_VERSION",
+        // `app_version()` 里设置页的值高于编译期默认，这里只区分「有覆盖 / 用默认」
+        None if version != super::claim::DEFAULT_APP_VERSION => "设置页的客户端版本",
+        None => "编译期默认值",
+    };
+    format!(
+        "套餐池请求被上游拒绝（3012），不代表套餐额度已用尽。\
+         已停止后续重试，不再刷新凭证或切换账号。\
+         ⚠️ 本次请求头里的 X-ZCode-App-Version = {version}（来源：{source}）—— \
+         上游把这一格当推理准入判据，实测 3.17.0 起一律 3012、3.16.2 及以下正常，\
+         请先确认它是不是被改高了（排障时设过 ZCODE_APP_VERSION 后忘删最常见）。\
+         版本无误时：用官方 ZCode 客户端核对同一账号、同一套餐池，若同样失败\
+         需联系上游支持；若仅网关失败，请检查提供商插件与请求兼容性。\
+         反复重试或充值不能解除这类限制。\
+         编码套餐与套餐池额度独立，切换通道不会转移这份额度"
+    )
+}
+
 pub(super) fn code_hint(code: i64) -> Option<&'static str> {
     match code {
         3007 => Some(
             "上游要求人机验证（3007）：验证码令牌缺失或已失效。\
              令牌由打开着的主窗口或浏览器面板页自动铸造；若持续出现，请稍后重试",
         ),
+        // 3012 的文案要带运行时版本号，见 [`risk_rejection_hint`]；这里留一条
+        // 不带版本的兜底（被 `errors.rs` 的 `code == Some(3012)` 分支优先覆盖）
         3012 => Some(
             "套餐池请求被上游拒绝（3012），不代表套餐额度已用尽。\
              已停止后续重试，不再刷新凭证或切换账号。\
-             请用官方 ZCode 客户端核对同一账号、同一套餐池：若同样失败，\
-             需联系上游支持核查；若仅网关失败，请检查提供商插件与请求兼容性。\
              反复重试或充值不能解除这类限制。\
              编码套餐与套餐池额度独立，切换通道不会转移这份额度",
         ),

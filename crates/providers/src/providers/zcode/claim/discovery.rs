@@ -233,6 +233,28 @@ pub async fn preview(
             }
         }
     }
+    // ── 过期套餐不进展示列表（issue #37）──────────────────────────
+    // `saved.plans`（台账）是无条件并回展示列表的，于是**每一期活动结束后都会
+    // 在列表里留一条**：窗口已过、`claimed` 里又因为「窗口过了就不算领过」
+    // （见 `state.rs` 的 retain）而没有它 ⇒ `claim_state` 落到 `unknown` ⇒
+    // 界面渲染成「待确认」+「尝试领取」，点下去会对一个已结束的活动发 claim，
+    // 还要白耗一次一次性的人机验证结果。
+    //
+    // 判据（三种都不丢）：
+    //   · 已领取（台账里有 claim 时刻）—— 历史事实，要留着；
+    //   · 账号名下有这份套餐（`owned` 匹配活动）—— 那是「已领取但上游发现
+    //     接口不再返回」的正常展示对象，issue 里明确要求保留；
+    //   · 窗口还没结束，或上游没给结束时刻（不知道就不猜，留着）。
+    // 其余（窗口已过 + 没领 + 名下没有）一定是历史残留，丢弃。
+    //
+    // ⚠️ 必须放在 `ownership::query` **之后**：那段才填 `snapshot.owned`，
+    // 放前面会把「名下已有」的条目一起误删。
+    // ⚠️ 必须放在 `remember_preview` **之前**：台账由这份列表回写，放后面
+    // 等于每轮又把过期条目写回台账，下一轮照样翻出来。
+    let now_secs = crate::logging::now_ms() / 1000;
+    snapshot.plans.retain(|plan| {
+        plan_is_current(plan, &snapshot.claimed, &snapshot.owned, now_secs)
+    });
     match state::remember_preview(
         ctx, region, account, jwt, device_mid, user_id, &snapshot.plans, &snapshot.owned,
         &checkin_plan_ids, snapshot.preview_error.is_none() && snapshot.marketing_error.is_none()
@@ -257,6 +279,30 @@ pub async fn preview(
         )));
     }
     Ok(snapshot)
+}
+
+/// 一条套餐该不该出现在**展示列表**里（issue #37）。
+///
+/// ── 三种一律保留 ────────────────────────────────────────────
+///   · **已领取**（台账里有 claim 时刻）—— 历史事实，用户要能回看；
+///   · **账号名下有这份套餐**（`owned` 匹配本活动）—— 那是「已领取但上游发现
+///     接口不再返回」的正常展示对象，issue 里明确要求保留；
+///   · **窗口还没结束**，或**上游没给结束时刻**（不知道就不猜，留着）。
+///
+/// 其余（窗口已过 + 没领 + 名下没有）一定是台账残留，丢弃。
+pub(super) fn plan_is_current(
+    plan: &ClaimablePlan,
+    claimed: &std::collections::BTreeMap<String, i64>,
+    owned: &std::collections::BTreeMap<String, OwnedPlan>,
+    now_secs: i64,
+) -> bool {
+    if claimed.contains_key(&plan.plan_id) {
+        return true;
+    }
+    if owned.get(&plan.plan_id).is_some_and(|owned| owned.matches_activity(plan)) {
+        return true;
+    }
+    plan.ends_at.is_none_or(|end| end > now_secs)
 }
 
 pub(crate) async fn resolve_target(
@@ -295,4 +341,88 @@ pub(crate) async fn resolve_target(
         !snapshot.claimed.contains_key(&plan.plan_id)
             && !snapshot.owned.get(&plan.plan_id).is_some_and(|owned| owned.matches_activity(plan))
     }))
+}
+
+#[cfg(test)]
+mod expiry_filter_tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    fn plan(id: &str, starts: i64, ends: i64) -> ClaimablePlan {
+        ClaimablePlan {
+            plan_id: id.to_string(),
+            name: id.to_string(),
+            description: String::new(),
+            priority: 0,
+            starts_at: Some(starts),
+            ends_at: Some(ends),
+            entitlements: Vec::new(),
+            marketing_campaign_ids: Vec::new(),
+        }
+    }
+
+    /// 窗口已过、没领、名下也没有 ⇒ 必须从展示列表里消失（issue #37 的主症状）。
+    #[test]
+    fn an_expired_unclaimed_plan_is_dropped() {
+        let claimed = BTreeMap::new();
+        let owned = BTreeMap::new();
+        // 窗口 11/4 19:00 → 11/5 09:00，现在 11/5 19:24
+        let now = 1_793_846_000_i64;
+        assert!(!plan_is_current(&plan("zcode-v3-start-plan-gb-1104", 1_793_790_000, 1_793_840_400), &claimed, &owned, now));
+    }
+
+    /// 窗口已过但**已领取** ⇒ 保留（历史事实，用户要能回看）。
+    #[test]
+    fn an_expired_but_claimed_plan_is_kept() {
+        let mut claimed = BTreeMap::new();
+        claimed.insert("plan-a".to_string(), 1_793_800_000_i64);
+        let owned = BTreeMap::new();
+        let now = 1_793_846_000_i64;
+        assert!(plan_is_current(&plan("plan-a", 1_793_790_000, 1_793_840_400), &claimed, &owned, now));
+    }
+
+    /// 窗口已过，但账号**名下有一个更新的同 id 实例**（后面某一期又领到了）
+    /// ⇒ 保留。`matches_activity` 的判据是「实例结束时刻晚于活动开始时刻」，
+    /// 所以这里的 `ends_at` 必须是将来时间 —— 它代表的是「名下的那份还有效」。
+    #[test]
+    fn an_expired_plan_owned_by_the_account_is_kept() {
+        let claimed = BTreeMap::new();
+        let candidate = plan("plan-b", 1_793_790_000, 1_793_840_400);
+        let mut owned = BTreeMap::new();
+        owned.insert(
+            "plan-b".to_string(),
+            OwnedPlan {
+                plan_id: "plan-b".to_string(),
+                user_plan_id: None,
+                name: "plan-b".to_string(),
+                state: "active".to_string(),
+                starts_at: Some(1_793_843_200),
+                // 将来的结束时刻：`matches_activity` 会先排除「已过期的名下实例」
+                ends_at: Some(crate::http::now_ms() / 1000 + 86_400),
+                pending_until: None,
+                entitlements: Vec::new(),
+            },
+        );
+        let now = 1_793_846_000_i64;
+        assert!(plan_is_current(&candidate, &claimed, &owned, now));
+    }
+
+    /// 窗口还没结束 ⇒ 一律保留（本轮可领的那一条不能被误删）。
+    #[test]
+    fn a_current_plan_is_kept() {
+        let claimed = BTreeMap::new();
+        let owned = BTreeMap::new();
+        let now = 1_793_846_000_i64;
+        assert!(plan_is_current(&plan("plan-c", 1_793_843_200, 1_793_893_200), &claimed, &owned, now));
+    }
+
+    /// 上游没给结束时刻 ⇒ 不猜，保留（`ends_at` 缺失不等于过期）。
+    #[test]
+    fn a_plan_without_an_end_time_is_kept() {
+        let claimed = BTreeMap::new();
+        let owned = BTreeMap::new();
+        let mut open_ended = plan("plan-d", 1_793_790_000, 0);
+        open_ended.ends_at = None;
+        assert!(plan_is_current(&open_ended, &claimed, &owned, 1_793_846_000_i64));
+    }
 }
