@@ -36,6 +36,8 @@ pub mod commandcode;
 pub mod demo;
 #[cfg(feature = "kuku")]
 pub mod kuku;
+#[cfg(feature = "lingxi")]
+pub mod lingxi;
 #[cfg(feature = "lobsterai")]
 pub mod lobsterai;
 #[cfg(feature = "loomy")]
@@ -209,6 +211,10 @@ pub fn registry() -> Vec<BoxProvider> {
 
     #[cfg(feature = "buddy")]
     list.push(Box::new(buddy::BuddyProvider));
+
+    // WPS 灵犀（2026-10-28 新接；加在末尾，不动存量顺序）
+    #[cfg(feature = "lingxi")]
+    list.push(Box::new(lingxi::LingxiProvider));
 
     list
 }

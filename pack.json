@@ -239,6 +239,12 @@
       "label": "CodeBuddy",
       "order": 37,
       "default_enabled": true
+    },
+    {
+      "id": "lingxi",
+      "label": "WPS 灵犀",
+      "order": 38,
+      "default_enabled": true
     }
   ],
   "icons": "assets",
