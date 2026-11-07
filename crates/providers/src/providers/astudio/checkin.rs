@@ -23,7 +23,9 @@ pub async fn checkin(ctx: &PluginCtx, account: &str) -> Result<proto::CheckinRep
         .store_get(PROVIDER_ID, account)
         .await
         .map_err(|error| format!("读取 AStudio 账号失败：{error}"))?;
-    let credentials = Credentials::from_secret(&stored.secret);
+    // 先用本机桌面端的登录态校正会话（issue #36）：桌面端每次启动都换 token，
+    // 只在「缺失时补」仍会在第二天过期，所以这里每次都比对一次。
+    let credentials = super::accounts::reconcile_session(ctx, account, &stored.secret).await;
     if credentials.key.is_empty() {
         return Err("AStudio 账号缺少 modelBearerToken，请重新登录或粘贴".to_string());
     }

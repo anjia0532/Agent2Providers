@@ -454,6 +454,54 @@ fn paste_credential(
     })
 }
 
+/// 用**本机桌面端**的登录态校正库里的会话（issue #36）。
+///
+/// ── 为什么必须有这一步 ──────────────────────────────────────
+/// 两条都会永久坏掉：
+///   1. 添加账号时桌面端还没登录 ⇒ 库里只有 `modelBearerToken` ⇒ 之后桌面端
+///      登录了，库里那份**不会自己更新** ⇒ 永远「无网页会话」，签到恒 Ineligible；
+///   2. 添加时桌面端登录了，但**桌面端每次启动都换 token** ⇒ 库里那份放着不用
+///      就过期 ⇒ 表现为「昨天还能签到，今天报会话失效」，只能删号重加。
+///
+/// 所以**不能只在「缺失时补」**：必须每次都拿桌面端的当前值比对，不一致就写回。
+/// 身份对了才写（`account_id` 一致，或库里那个字段为空 = 单账号场景），
+/// 避免把 A 账号的会话写到 B 账号上。
+///
+/// 读不到桌面端（容器 / 无头机 / 没装客户端）时原样返回，不报错 —— 那是正常
+/// 部署形态，不该让签到因此失败。
+pub async fn reconcile_session(ctx: &PluginCtx, account: &str, secret: &Value) -> Credentials {
+    let current = Credentials::from_secret(secret);
+    let Ok(desktop) = read_desktop().await else {
+        return current;
+    };
+    if !desktop.has_session() {
+        return current;
+    }
+    // 身份校验：库里 `account_id` 为空（只贴了模型凭据 / 单账号）或与桌面端一致
+    let same_account = current.account_id.is_empty() || current.account_id == desktop.account_id;
+    if !same_account {
+        return current;
+    }
+    // 已经一致就不写盘（避免每轮签到都触发一次比较再写）
+    if current.has_session() && current.token == desktop.token {
+        return current;
+    }
+    let mut next = current.clone();
+    if next.key.is_empty() {
+        next.key = desktop.key.clone();
+    }
+    if next.uid.is_empty() {
+        next.uid = desktop.uid.clone();
+    }
+    next.token = desktop.token.clone();
+    next.account_id = desktop.account_id.clone();
+    next.sso_session_id = desktop.sso_session_id.clone();
+    let updated = secret_of(&next);
+    // 比较再写：并发时只有拿到当前值的那一方写得进去
+    let _ = ctx.store_update(account, secret, &updated).await;
+    next
+}
+
 /// 从一份凭据构造 secret（登录流程与手动添加共用）。
 pub fn secret_of(credentials: &Credentials) -> Value {
     let mut secret = json!({});

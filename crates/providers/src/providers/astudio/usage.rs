@@ -14,7 +14,7 @@
 use agent2api_provider_sdk::PluginCtx;
 use serde_json::{json, Value};
 
-use super::accounts::Credentials;
+use super::accounts;
 use super::client::{self, CatalogError, StudioError};
 use super::{endpoints, PROVIDER_ID};
 
@@ -30,7 +30,9 @@ pub async fn query(ctx: &PluginCtx, account: &str) -> Result<Value, String> {
         .store_get(PROVIDER_ID, account)
         .await
         .map_err(|error| format!("读取 AStudio 账号失败：{error}"))?;
-    let credentials = Credentials::from_secret(&stored.secret);
+    // 先用本机桌面端的登录态校正会话（issue #36）：只有模型凭据的账号在桌面端
+    // 登录后应当能读到积分，而不是永远走「只探活」这条分支。
+    let credentials = accounts::reconcile_session(ctx, account, &stored.secret).await;
     if credentials.key.is_empty() {
         return Err("AStudio 账号缺少 modelBearerToken，请重新登录或粘贴".to_string());
     }
