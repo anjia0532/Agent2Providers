@@ -293,6 +293,55 @@ impl Provider for QiniuProvider {
         let api_key = credentials::api_key_of(secret)?;
         Ok(format!("qiniu-{}", short_hash(&api_key)))
     }
+
+    /// `auth.methods`：界面据此渲染「添加账号」表单。
+    ///
+    /// ── 为什么必须申报 ────────────────────────────────────────
+    /// 不申报时网关回 501，面板只能退化成一个「手动凭证 JSON」文本框 ——
+    /// 用户看到的是「插件未实现 auth.methods」，实际上插件是好的，只是
+    /// 少说了这一句。申报之后界面直接给一个密钥输入框，粘贴即用。
+    fn admin_action<'a>(
+        &'a self,
+        _ctx: &'a PluginCtx,
+        _account: &'a str,
+        action: &'a str,
+        _payload: &'a Value,
+    ) -> SendFuture<'a, Value> {
+        Box::pin(async move {
+            match action {
+                "auth.methods" => Ok(login_methods()),
+                _ => Err(agent2api_provider_sdk::unsupported(format!(
+                    "七牛云不支持管理动作「{action}」"
+                ))),
+            }
+        })
+    }
+}
+
+/// `auth.methods` 的返回（`type: "api"` = 填写凭证）。
+///
+/// 七牛云只有一条入口：控制台生成的 API Key。没有 OAuth、没有设备码，
+/// 也没有可导入的本机登录态 —— 所以这里只申报一条 `api` 方式。
+fn login_methods() -> Value {
+    json!({ "methods": [{
+        "methodIndex": 0,
+        "type": "api",
+        "label": "七牛云 API Key",
+        "instructions": "在七牛云控制台的「AI 大模型推理」页生成 API Key（以 sk- 开头），粘贴到下面的输入框即可。",
+        "prompts": [{
+            "key": "key",
+            "type": "text",
+            "label": "API Key",
+            "placeholder": "sk-…",
+            "secret": true,
+            "optional": false
+        }],
+        // `api` 方式不能用本机导入、不能要求内嵌窗口（网关会以 502 拒掉）
+        "localOnly": false,
+        "manualCallback": false,
+        "callbackInput": "url",
+        "embeddedOnly": false
+    }] })
 }
 
 /// 粘贴归一化：剥引号 / 整行前缀 / 尾部杂字段，返回**裸 key**。

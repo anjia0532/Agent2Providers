@@ -89,6 +89,10 @@ mingw / osxcross / musl 工具链，把它塞进来只会多出一个注定失�
 | `aarch64-apple-darwin` | Apple Silicon 的 macOS |
 | `x86_64-unknown-linux-gnu` | Linux 桌面 amd64、Docker amd64 |
 | `aarch64-unknown-linux-gnu` | Docker arm64 |
+| 七牛云 | ✓（OpenAI 兼容对话） | —（静态 Key） | ✓（/v1/models，缺失回落快照） | — | — | — |
+| MiniMax Code 中国版 | 已实现；未验证（Anthropic Messages） | 已实现；未验证（设备码 + PKCE） | 已实现；未验证 | 已实现；未验证（积分明细） | 已实现；未验证 | — |
+| MiniMax Code 国际版 | 已实现；未验证（Anthropic Messages） | 已实现；未验证（设备码 + PKCE） | 已实现；未验证 | 已实现；未验证（积分明细） | 已实现；未验证 | — |
+| CodeBuddy（腾讯） | 已实现；未验证（OpenAI 兼容对话） | 已实现；未验证（浏览器授权） | 已实现；未验证 | 已实现；未验证（积分包） | 已实现；未验证（每日签到） | — |
 
 网关会检查当前平台的入口点是否存在于包中，缺失则拒绝安装。更新检查按资源名
 `<id>-<version>-<target>.zip` 精确匹配，所以文件名里的平台段不能省略。

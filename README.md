@@ -90,6 +90,10 @@ OS-and-architecture pair needs its own binary. `pack.json` declares five:
 | `aarch64-apple-darwin` | macOS on Apple Silicon |
 | `x86_64-unknown-linux-gnu` | Linux desktop amd64, Docker amd64 |
 | `aarch64-unknown-linux-gnu` | Docker arm64 |
+| Qiniu Cloud (Qiniu AI) | ✓ (OpenAI-compatible chat) | — (static key) | ✓ (/v1/models, bundled fallback) | — | — | — |
+| MiniMax Code (China) | Implemented; unverified (Anthropic Messages) | Implemented; unverified (device code + PKCE) | Implemented; unverified | Implemented; unverified (credit details) | Implemented; unverified | — |
+| MiniMax Code (Global) | Implemented; unverified (Anthropic Messages) | Implemented; unverified (device code + PKCE) | Implemented; unverified | Implemented; unverified (credit details) | Implemented; unverified | — |
+| CodeBuddy (Tencent) | Implemented; unverified (OpenAI-compatible chat) | Implemented; unverified (browser authorization) | Implemented; unverified | Implemented; unverified (credit packages) | Implemented; unverified (daily check-in) | — |
 
 The gateway checks that the current platform's entry point is in the package
 and refuses one that lacks it. Update checks match the asset name

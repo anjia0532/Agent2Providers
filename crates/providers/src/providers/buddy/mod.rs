@@ -450,6 +450,48 @@ impl Provider for BuddyProvider {
     fn account_identity(&self, secret: &Value) -> Result<String, String> {
         Ok(credentials::identity_of(secret))
     }
+
+    /// `auth.methods`：界面据此渲染「添加账号」表单。
+    ///
+    /// 不申报时网关回 501，面板只留一个「手动凭证 JSON」文本框 ——
+    /// 用户看到「插件未实现 auth.methods」，而实际上浏览器授权链路是完整的，
+    /// 只是少说了这一句。申报之后界面直接给「登录并添加」按钮。
+    fn admin_action<'a>(
+        &'a self,
+        _ctx: &'a PluginCtx,
+        _account: &'a str,
+        action: &'a str,
+        _payload: &'a Value,
+    ) -> SendFuture<'a, Value> {
+        Box::pin(async move {
+            match action {
+                "auth.methods" => Ok(login_methods()),
+                _ => Err(agent2api_provider_sdk::unsupported(format!(
+                    "CodeBuddy 不支持管理动作「{action}」"
+                ))),
+            }
+        })
+    }
+}
+
+/// `auth.methods` 的返回（`type: "oauth"` = 走共享登录桥的浏览器登录）。
+///
+/// 三步链路（`auth/state` → `auth/token` 轮询 → `login/account` 轮询）全在
+/// 插件里完成：点「登录并添加」→ 网关调 `login.start` 拿授权页 → 用户在
+/// 页面上完成登录 → 网关轮询 `login.poll` 直到账号落库。
+/// `prompts` 为空：这条链路不需要用户填任何字段。
+fn login_methods() -> Value {
+    json!({ "methods": [{
+        "methodIndex": 0,
+        "type": "oauth",
+        "label": "CodeBuddy 浏览器登录",
+        "instructions": "点「登录并添加」会打开 CodeBuddy 官方授权页；在页面上完成登录后会自动回到应用，无需粘贴任何东西。",
+        "prompts": [],
+        "localOnly": false,
+        "manualCallback": false,
+        "callbackInput": "url",
+        "embeddedOnly": false
+    }] })
 }
 
 /// provider id（`pack.json` 里也要写同一个）。

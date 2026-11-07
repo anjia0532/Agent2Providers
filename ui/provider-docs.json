@@ -323,6 +323,78 @@
         "ko": "EchoBird의 MIT 구현을 기반으로 Doubao Work를 연동합니다. 공식 페이지 로그인 또는 전체 Cookie, 계정별 온라인 모델 목록, 스트리밍 대화 및 추론, 이미지 입력, 구독 기간과 보너스 할당량 조회, 일일 체크인 및 조건을 충족한 보상 수령을 지원합니다. 로컬 로그인 상태는 클라이언트의 Cookie 데이터베이스와 장치 ID를 직접 읽어 가져오며 디버그 포트가 필요 없습니다. 채팅 작업으로 이미지 생성을 실행할 수 있습니다(작업당 1장, 참조 이미지 편집은 지원하지 않음). 도구 호출은 텍스트 연결이며 네이티브 function calling이 아닙니다. 토큰 사용량을 꾸며내지 않습니다. Cookie가 만료되면 다시 로그인해야 합니다. 실제 계정으로 검증하지 않았으며 API와 이벤트는 상위 서비스 응답에 따릅니다.",
         "pt-BR": "Integra o Doubao Work com a implementação MIT do EchoBird: login na página oficial ou cookies completos, modelos online por conta, chat e raciocínio em streaming, entrada de imagens, janelas da assinatura e cota bônus, check-in diário e resgate de recompensas elegíveis. A importação do login local lê diretamente o banco de cookies e o ID do dispositivo do cliente, sem porta de depuração. A geração de imagens roda como uma tarefa de chat (uma imagem por tarefa); a edição com imagem de referência não é suportada. Ferramentas usam uma ponte de texto, não function calling nativo; o uso de tokens não é inventado. Cookies expirados exigem novo login. Não validado com conta real; APIs e campanhas dependem das respostas upstream."
       }]
+    },
+    "qiniu": {
+      "capabilities": {
+        "chat": { "status": "supported" },
+        "refresh": { "status": "not_applicable" },
+        "model_refresh": { "status": "supported" },
+        "usage": { "status": "not_applicable" },
+        "checkin": { "status": "not_applicable" },
+        "claims": { "status": "not_applicable" }
+      },
+      "notes": [{
+        "zh-CN": "使用控制台生成的静态 API Key（以 sk- 开头），没有 OAuth 授权页，也没有续期接口；失效只能回控制台重新生成。余额只在登录后的网页控制台可见，插件不提供读数。模型目录来自 /v1/models，未使用时回落到内置快照。七牛云的模型 id 既有带命名空间前缀的（moonshotai/kimi-k3）也有裸名（deepseek-v3），插件逐字透传，不做拆分或改写。",
+        "zh-Hant": "使用主控台產生的靜態 API Key（以 sk- 開頭），沒有 OAuth 授權頁，也沒有續期介面；失效只能回主控台重新產生。餘額只在登入後的網頁主控台可見，外掛不提供讀數。模型目錄來自 /v1/models，未使用時回落到內建快照。七牛雲的模型 id 既有帶命名空間前綴的（moonshotai/kimi-k3）也有裸名（deepseek-v3），外掛逐字透傳，不做拆分或改寫。",
+        "en": "Uses a static API Key generated in the console (prefixed sk-). There is no OAuth page and no renewal endpoint; a revoked key must be regenerated in the console. Balance is only visible in the signed-in web console, so the plugin reports none. The catalog comes from /v1/models and falls back to a bundled snapshot. Model ids are sometimes namespaced (moonshotai/kimi-k3) and sometimes bare (deepseek-v3); ids are forwarded verbatim, never split or rewritten.",
+        "ja": "コンソールで発行する固定 API Key（sk- で始まる）を使います。OAuth 画面も更新 API もなく、失効した場合はコンソールで再発行してください。残高はログイン後の Web コンソールでのみ確認できるため、プラグインは読み取りません。モデル一覧は /v1/models から取得し、未取得時は同梱スナップショットを使います。モデル id は名前空間付き（moonshotai/kimi-k3）と裸名（deepseek-v3）が混在しており、いずれもそのまま転送し、分割や書き換えは行いません。",
+        "ko": "콘솔에서 발급하는 정적 API Key(sk- 로 시작)를 사용합니다. OAuth 화면과 갱신 API가 없으며, 폐기된 키는 콘솔에서 다시 발급해야 합니다. 잔액은 로그인한 웹 콘솔에서만 보이므로 플러그인은 읽지 않습니다. 모델 목록은 /v1/models 에서 가져오고, 없으면 내장 스냅샷을 사용합니다. 모델 id 는 네임스페이스가 붙은 형태(moonshotai/kimi-k3)와 맨 이름(deepseek-v3)이 섞여 있으며, 모두 그대로 전달하고 분리하거나 바꾸지 않습니다.",
+        "pt-BR": "Usa uma API Key estática gerada no console (prefixo sk-). Não há página OAuth nem endpoint de renovação; uma chave revogada precisa ser gerada novamente no console. O saldo só aparece no console web autenticado, então o plugin não reporta nenhum. O catálogo vem de /v1/models e recorre a um snapshot embutido quando indisponível. Os ids de modelo às vezes têm namespace (moonshotai/kimi-k3) e às vezes são simples (deepseek-v3); são encaminhados literalmente, sem separar nem reescrever."
+      }]
+    },
+    "minimax": {
+      "capabilities": {
+        "chat": { "status": "implemented_unverified" },
+        "refresh": { "status": "implemented_unverified" },
+        "model_refresh": { "status": "implemented_unverified" },
+        "usage": { "status": "implemented_unverified" },
+        "checkin": { "status": "implemented_unverified" },
+        "claims": { "status": "not_applicable" }
+      },
+      "notes": [{
+        "zh-CN": "浏览器设备码 + PKCE 登录，全程由插件完成（已实测向 account.minimax 取到真实设备码与授权页）。转发走 Anthropic Messages 协议；模型目录来自 /mavis/api/v1/models；积分余额来自 credit/details；签到需带 timezone_id，业务码在 base_resp.status_code。思考档位按模型的 thinking_config 区分：M3 可关闭，M3.1-Flash 强制 adaptive，M2.7 系强制开启且不发 thinking。尚未用真实账号完成整轮对话验证。",
+        "zh-Hant": "瀏覽器裝置碼 + PKCE 登入，全程由外掛完成（已實測向 account.minimax 取得真實裝置碼與授權頁）。轉發走 Anthropic Messages 協議；模型目錄來自 /mavis/api/v1/models；積分餘額來自 credit/details；簽到需帶 timezone_id，業務碼在 base_resp.status_code。思考檔位依模型的 thinking_config 區分：M3 可關閉，M3.1-Flash 強制 adaptive，M2.7 系強制開啟且不送 thinking。尚未以真實帳號完成整輪對話驗證。",
+        "en": "Browser device-code plus PKCE sign-in, handled entirely by the plugin (a real device code and authorization page were obtained from account.minimax during verification). Forwarding uses the Anthropic Messages protocol; the catalog comes from /mavis/api/v1/models; credit balance comes from credit/details; check-in requires timezone_id and reports its business code in base_resp.status_code. Reasoning follows each model’s thinking_config: M3 can disable it, M3.1-Flash forces adaptive, and the M2.7 family is always on so no thinking field is sent. A full chat round has not been validated with a real account.",
+        "ja": "ブラウザのデバイスコード + PKCE でログインし、処理はすべてプラグイン側で完結します（検証時に account.minimax から実際のデバイスコードと認可ページを取得済み）。転送は Anthropic Messages プロトコル、モデル一覧は /mavis/api/v1/models、クレジット残高は credit/details、チェックインは timezone_id が必須で業務コードは base_resp.status_code に入ります。思考設定はモデルの thinking_config に従い、M3 は無効化でき、M3.1-Flash は adaptive 固定、M2.7 系は常時有効のため thinking を送りません。実アカウントでの会話一巡は未検証です。",
+        "ko": "브라우저 기기 코드 + PKCE 로그인을 플러그인이 전담합니다(검증 시 account.minimax 에서 실제 기기 코드와 인가 페이지를 받았습니다). 전달은 Anthropic Messages 프로토콜, 모델 목록은 /mavis/api/v1/models, 크레딧 잔액은 credit/details, 출석 체크는 timezone_id 가 필요하고 업무 코드는 base_resp.status_code 에 있습니다. 사고 설정은 모델의 thinking_config 를 따르며 M3 는 끌 수 있고, M3.1-Flash 는 adaptive 고정, M2.7 계열은 항상 켜져 있어 thinking 을 보내지 않습니다. 실제 계정으로 전체 대화를 검증하지는 않았습니다.",
+        "pt-BR": "Login por código de dispositivo no navegador com PKCE, feito inteiramente pelo plugin (um código e uma página de autorização reais foram obtidos de account.minimax durante a verificação). O encaminhamento usa o protocolo Anthropic Messages; o catálogo vem de /mavis/api/v1/models; o saldo de créditos vem de credit/details; o check-in exige timezone_id e informa o código de negócio em base_resp.status_code. O raciocínio segue o thinking_config de cada modelo: M3 permite desativar, M3.1-Flash força adaptive e a família M2.7 é sempre ativa, então nenhum campo thinking é enviado. Uma rodada completa de conversa não foi validada com conta real."
+      }]
+    },
+    "minimaxintl": {
+      "capabilities": {
+        "chat": { "status": "implemented_unverified" },
+        "refresh": { "status": "implemented_unverified" },
+        "model_refresh": { "status": "implemented_unverified" },
+        "usage": { "status": "implemented_unverified" },
+        "checkin": { "status": "implemented_unverified" },
+        "claims": { "status": "not_applicable" }
+      },
+      "notes": [{
+        "zh-CN": "浏览器设备码 + PKCE 登录，全程由插件完成（已实测向 account.minimax 取到真实设备码与授权页）。转发走 Anthropic Messages 协议；模型目录来自 /mavis/api/v1/models；积分余额来自 credit/details；签到需带 timezone_id，业务码在 base_resp.status_code。思考档位按模型的 thinking_config 区分：M3 可关闭，M3.1-Flash 强制 adaptive，M2.7 系强制开启且不发 thinking。尚未用真实账号完成整轮对话验证。",
+        "zh-Hant": "瀏覽器裝置碼 + PKCE 登入，全程由外掛完成（已實測向 account.minimax 取得真實裝置碼與授權頁）。轉發走 Anthropic Messages 協議；模型目錄來自 /mavis/api/v1/models；積分餘額來自 credit/details；簽到需帶 timezone_id，業務碼在 base_resp.status_code。思考檔位依模型的 thinking_config 區分：M3 可關閉，M3.1-Flash 強制 adaptive，M2.7 系強制開啟且不送 thinking。尚未以真實帳號完成整輪對話驗證。",
+        "en": "Browser device-code plus PKCE sign-in, handled entirely by the plugin (a real device code and authorization page were obtained from account.minimax during verification). Forwarding uses the Anthropic Messages protocol; the catalog comes from /mavis/api/v1/models; credit balance comes from credit/details; check-in requires timezone_id and reports its business code in base_resp.status_code. Reasoning follows each model’s thinking_config: M3 can disable it, M3.1-Flash forces adaptive, and the M2.7 family is always on so no thinking field is sent. A full chat round has not been validated with a real account.",
+        "ja": "ブラウザのデバイスコード + PKCE でログインし、処理はすべてプラグイン側で完結します（検証時に account.minimax から実際のデバイスコードと認可ページを取得済み）。転送は Anthropic Messages プロトコル、モデル一覧は /mavis/api/v1/models、クレジット残高は credit/details、チェックインは timezone_id が必須で業務コードは base_resp.status_code に入ります。思考設定はモデルの thinking_config に従い、M3 は無効化でき、M3.1-Flash は adaptive 固定、M2.7 系は常時有効のため thinking を送りません。実アカウントでの会話一巡は未検証です。",
+        "ko": "브라우저 기기 코드 + PKCE 로그인을 플러그인이 전담합니다(검증 시 account.minimax 에서 실제 기기 코드와 인가 페이지를 받았습니다). 전달은 Anthropic Messages 프로토콜, 모델 목록은 /mavis/api/v1/models, 크레딧 잔액은 credit/details, 출석 체크는 timezone_id 가 필요하고 업무 코드는 base_resp.status_code 에 있습니다. 사고 설정은 모델의 thinking_config 를 따르며 M3 는 끌 수 있고, M3.1-Flash 는 adaptive 고정, M2.7 계열은 항상 켜져 있어 thinking 을 보내지 않습니다. 실제 계정으로 전체 대화를 검증하지는 않았습니다.",
+        "pt-BR": "Login por código de dispositivo no navegador com PKCE, feito inteiramente pelo plugin (um código e uma página de autorização reais foram obtidos de account.minimax durante a verificação). O encaminhamento usa o protocolo Anthropic Messages; o catálogo vem de /mavis/api/v1/models; o saldo de créditos vem de credit/details; o check-in exige timezone_id e informa o código de negócio em base_resp.status_code. O raciocínio segue o thinking_config de cada modelo: M3 permite desativar, M3.1-Flash força adaptive e a família M2.7 é sempre ativa, então nenhum campo thinking é enviado. Uma rodada completa de conversa não foi validada com conta real."
+      }]
+    },
+    "buddy": {
+      "capabilities": {
+        "chat": { "status": "implemented_unverified" },
+        "refresh": { "status": "implemented_unverified" },
+        "model_refresh": { "status": "implemented_unverified" },
+        "usage": { "status": "implemented_unverified" },
+        "checkin": { "status": "implemented_unverified" },
+        "claims": { "status": "not_applicable" }
+      },
+      "notes": [{
+        "zh-CN": "浏览器授权 + 轮询登录（已实测向 copilot.tencent.com 取到真实授权页）；转发为 OpenAI 兼容协议。余额来自 get-user-resource，响应是 data.Response.Data.Accounts[] 双层嵌套，只累加有效包（失效包并进总额会让数字虚高）。签到按业务码幂等判定，重复领取不算失败。成长任务体系（任务列表、领奖、盲盒、连续打卡、遥测上报）本期未接入，只提供每日签到与积分余额。尚未用真实账号完成整轮对话验证。",
+        "zh-Hant": "瀏覽器授權 + 輪詢登入（已實測向 copilot.tencent.com 取得真實授權頁）；轉發為 OpenAI 相容協議。餘額來自 get-user-resource，回應是 data.Response.Data.Accounts[] 雙層巢狀，只累加有效包（失效包併進總額會讓數字虛高）。簽到依業務碼冪等判定，重複領取不算失敗。成長任務體系（任務清單、領獎、盲盒、連續打卡、遙測上報）本期未接入，只提供每日簽到與積分餘額。尚未以真實帳號完成整輪對話驗證。",
+        "en": "Browser authorization with polling sign-in (a real authorization page was obtained from copilot.tencent.com during verification); forwarding uses the OpenAI-compatible protocol. Balance comes from get-user-resource, whose payload nests as data.Response.Data.Accounts[]; only active packages are summed, because including expired ones inflates the total. Check-in uses business codes for idempotency, so a repeat claim is not treated as a failure. The growth-task system (task lists, rewards, blind boxes, streaks, telemetry) is not integrated in this release; only daily check-in and credit balance are provided. A full chat round has not been validated with a real account.",
+        "ja": "ブラウザ認可 + ポーリングによるログイン（検証時に copilot.tencent.com から実際の認可ページを取得済み）。転送は OpenAI 互換プロトコルです。残高は get-user-resource から取得し、応答は data.Response.Data.Accounts[] の二重入れ子になっています。合計は有効なパッケージのみを加算します（失効分を含めると数字が膨らむため）。チェックインは業務コードで冪等判定し、再取得は失敗として扱いません。成長タスク群（タスク一覧、報酬、ブラインドボックス、連続記録、テレメトリ）は今回未対応で、毎日のチェックインとクレジット残高のみ提供します。実アカウントでの会話一巡は未検証です。",
+        "ko": "브라우저 인가 + 폴링 로그인(검증 시 copilot.tencent.com 에서 실제 인가 페이지를 받았습니다). 전달은 OpenAI 호환 프로토콜입니다. 잔액은 get-user-resource 에서 오며 응답은 data.Response.Data.Accounts[] 이중 중첩입니다. 유효한 패키지만 합산합니다(만료분을 더하면 숫자가 부풀려짐). 출석 체크는 업무 코드로 멱등 판정하며 중복 수령은 실패로 보지 않습니다. 성장 과제 체계(과제 목록, 보상, 블라인드 박스, 연속 출석, 텔레메트리)는 이번에 연결하지 않았고 일일 출석과 크레딧 잔액만 제공합니다. 실제 계정으로 전체 대화를 검증하지는 않았습니다.",
+        "pt-BR": "Autorização no navegador com login por polling (uma página de autorização real foi obtida de copilot.tencent.com durante a verificação); o encaminhamento usa o protocolo compatível com OpenAI. O saldo vem de get-user-resource, cuja resposta é aninhada em data.Response.Data.Accounts[]; apenas pacotes ativos são somados, porque incluir os expirados infla o total. O check-in usa códigos de negócio para idempotência, então um resgate repetido não é tratado como falha. O sistema de tarefas de crescimento (listas, recompensas, caixas surpresa, sequências, telemetria) não foi integrado nesta versão; apenas check-in diário e saldo de créditos são oferecidos. Uma rodada completa de conversa não foi validada com conta real."
+      }]
     }
   }
 }

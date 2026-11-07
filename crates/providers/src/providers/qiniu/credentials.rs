@@ -42,7 +42,17 @@ pub fn api_key_of(secret: &Value) -> Result<String, String> {
 /// 与 [`api_key_of`] 的取值链**逐字相同** —— 两处口径分叉的话，「能探活成功
 /// 却落不进账号」或反之都会变成难查的静默问题。
 pub fn api_key_from_payload(payload: &Value) -> String {
-    pick(payload, &["accessToken", "apiKey", "token", "session"])
+    let top = pick(payload, &["accessToken", "apiKey", "token", "session", "key"]);
+    if !top.is_empty() {
+        return top;
+    }
+    // `auth.methods` 申报的 `api` 方式：网关把表单字段装在 `inputs` 下
+    // （见 `api::accounts` 的 `NormalizeSource::Manual` 组装），键名就是
+    // `login_methods()` 里 prompts 的 `key`。
+    if let Some(inputs) = payload.get("inputs") {
+        return pick(inputs, &["key", "accessToken", "apiKey", "token", "session"]);
+    }
+    String::new()
 }
 
 /// API Key 的形态检查：`sk-` 前缀 + 其后只含字母数字与 `_` `-`。

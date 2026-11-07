@@ -482,6 +482,51 @@ impl Provider for MinimaxProvider {
     fn account_identity(&self, secret: &Value) -> Result<String, String> {
         Ok(credentials::identity_of(secret))
     }
+
+    /// `auth.methods`：界面据此渲染「添加账号」表单。
+    ///
+    /// 不申报时网关回 501，面板只留一个「手动凭证 JSON」文本框 ——
+    /// 用户看到「插件未实现 auth.methods」，而实际上设备码登录是完整的，
+    /// 只是少说了这一句。申报之后界面直接给「登录并添加」按钮。
+    fn admin_action<'a>(
+        &'a self,
+        _ctx: &'a PluginCtx,
+        _account: &'a str,
+        action: &'a str,
+        _payload: &'a Value,
+    ) -> SendFuture<'a, Value> {
+        Box::pin(async move {
+            match action {
+                "auth.methods" => Ok(login_methods(self.region)),
+                _ => Err(agent2api_provider_sdk::unsupported(format!(
+                    "{} 不支持管理动作「{action}」",
+                    self.region.label()
+                ))),
+            }
+        })
+    }
+}
+
+/// `auth.methods` 的返回（`type: "oauth"` = 走共享登录桥的浏览器登录）。
+///
+/// 设备码 + PKCE 全程由插件完成：点「登录并添加」→ 网关调 `login.start`
+/// 拿授权页与授权码 → 用户在页面上确认 → 网关按 `poll_interval_ms` 轮询
+/// `login.poll` 直到拿到令牌。`prompts` 为空：这条链路不需要用户填任何字段。
+fn login_methods(region: Region) -> Value {
+    json!({ "methods": [{
+        "methodIndex": 0,
+        "type": "oauth",
+        "label": format!("{} 浏览器登录", region.label()),
+        "instructions": format!(
+            "点「登录并添加」会打开 {} 的官方授权页并显示一个授权码；在页面上确认后会自动完成，无需粘贴任何东西。",
+            region.label()
+        ),
+        "prompts": [],
+        "localOnly": false,
+        "manualCallback": false,
+        "callbackInput": "url",
+        "embeddedOnly": false
+    }] })
 }
 
 /// 把设备码会话编进 flow 串（base64url(JSON)）。
