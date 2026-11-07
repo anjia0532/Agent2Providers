@@ -215,6 +215,30 @@
       "label": "QuWork",
       "order": 33,
       "default_enabled": true
+    },
+    {
+      "id": "qiniu",
+      "label": "七牛云",
+      "order": 34,
+      "default_enabled": true
+    },
+    {
+      "id": "minimax",
+      "label": "MiniMax Code 中国版",
+      "order": 35,
+      "default_enabled": true
+    },
+    {
+      "id": "minimaxintl",
+      "label": "MiniMax Code 国际版",
+      "order": 36,
+      "default_enabled": true
+    },
+    {
+      "id": "buddy",
+      "label": "CodeBuddy",
+      "order": 37,
+      "default_enabled": true
     }
   ],
   "icons": "assets",

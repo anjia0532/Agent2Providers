@@ -50,6 +50,12 @@ pub mod officeace;
 pub mod orcaterm;
 #[cfg(feature = "qoder")]
 pub mod qoder;
+#[cfg(feature = "qiniu")]
+pub mod qiniu;
+#[cfg(feature = "minimax")]
+pub mod minimax;
+#[cfg(feature = "buddy")]
+pub mod buddy;
 #[cfg(feature = "raccoon")]
 pub mod raccoon;
 #[cfg(feature = "trae")]
@@ -190,6 +196,19 @@ pub fn registry() -> Vec<BoxProvider> {
 
     #[cfg(feature = "quwork")]
     list.push(Box::new(quwork::QuWorkProvider));
+
+    #[cfg(feature = "qiniu")]
+    list.push(Box::new(qiniu::QiniuProvider));
+
+    // MiniMax 的两个站点是两个 provider、两个实例（同一份实现按站点参数化）
+    #[cfg(feature = "minimax")]
+    {
+        list.push(Box::new(minimax::MinimaxProvider::CN));
+        list.push(Box::new(minimax::MinimaxProvider::INTL));
+    }
+
+    #[cfg(feature = "buddy")]
+    list.push(Box::new(buddy::BuddyProvider));
 
     list
 }
