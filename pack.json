@@ -257,6 +257,12 @@
       "label": "OrcaRouter",
       "order": 41,
       "default_enabled": true
+    },
+    {
+      "id": "ima",
+      "label": "ima 腾讯",
+      "order": 42,
+      "default_enabled": true
     }
   ],
   "icons": "assets",

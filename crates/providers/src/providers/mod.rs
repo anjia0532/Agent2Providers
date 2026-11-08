@@ -62,6 +62,8 @@ pub mod buddy;
 pub mod teleagent;
 #[cfg(feature = "orcarouter")]
 pub mod orcarouter;
+#[cfg(feature = "ima")]
+pub mod ima;
 #[cfg(feature = "raccoon")]
 pub mod raccoon;
 #[cfg(feature = "trae")]
@@ -227,6 +229,10 @@ pub fn registry() -> Vec<BoxProvider> {
     // OrcaRouter（OpenAI 兼容 meta-router；免费档是 issue #367 的诉求）
     #[cfg(feature = "orcarouter")]
     list.push(Box::new(orcarouter::OrcarouterProvider));
+
+    // ima（腾讯 ima.copilot；Cookie 认证 + 建会话/提问两步）
+    #[cfg(feature = "ima")]
+    list.push(Box::new(ima::ImaProvider));
 
     list
 }
