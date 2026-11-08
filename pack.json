@@ -245,6 +245,12 @@
       "label": "WPS 灵犀",
       "order": 38,
       "default_enabled": true
+    },
+    {
+      "id": "teleagent",
+      "label": "TeleAgent 星辰智能体",
+      "order": 39,
+      "default_enabled": true
     }
   ],
   "icons": "assets",

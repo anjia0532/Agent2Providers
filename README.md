@@ -95,6 +95,7 @@ OS-and-architecture pair needs its own binary. `pack.json` declares five:
 | MiniMax Code (Global) | Implemented; unverified (Anthropic Messages) | Implemented; unverified (device code + PKCE) | Implemented; unverified | Implemented; unverified (credit details) | Implemented; unverified | — |
 | CodeBuddy (Tencent) | Implemented; unverified (OpenAI-compatible chat) | Implemented; unverified (browser authorization) | Implemented; unverified | Implemented; unverified (credit packages) | Implemented; unverified (daily check-in) | — |
 | WPS Lingxi (Lingxi Claw) | Implemented; unverified (chat / tools / thinking) | — (web session Cookie only) | Implemented; unverified | Implemented; unverified (total / gifted / purchased pools) | Implemented; unverified (balance delta) | Implemented; unverified (onboarding tasks) |
+| TeleAgent (China Telecom, Xingchen super-agent) | Implemented; unverified (chat / tools) | — (static credentials) | — (3 static models) | — | — | — |
 
 The gateway checks that the current platform's entry point is in the package
 and refuses one that lacks it. Update checks match the asset name

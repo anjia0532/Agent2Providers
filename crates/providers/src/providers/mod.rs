@@ -58,6 +58,8 @@ pub mod qiniu;
 pub mod minimax;
 #[cfg(feature = "buddy")]
 pub mod buddy;
+#[cfg(feature = "teleagent")]
+pub mod teleagent;
 #[cfg(feature = "raccoon")]
 pub mod raccoon;
 #[cfg(feature = "trae")]
@@ -215,6 +217,10 @@ pub fn registry() -> Vec<BoxProvider> {
     // WPS 灵犀（2026-10-28 新接；加在末尾，不动存量顺序）
     #[cfg(feature = "lingxi")]
     list.push(Box::new(lingxi::LingxiProvider));
+
+    // TeleAgent（中国电信星辰超级智能体，云端 API + 每请求签名）
+    #[cfg(feature = "teleagent")]
+    list.push(Box::new(teleagent::TeleagentProvider));
 
     list
 }
