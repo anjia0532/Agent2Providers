@@ -251,6 +251,12 @@
       "label": "TeleAgent 星辰智能体",
       "order": 39,
       "default_enabled": true
+    },
+    {
+      "id": "orcarouter",
+      "label": "OrcaRouter",
+      "order": 40,
+      "default_enabled": true
     }
   ],
   "icons": "assets",

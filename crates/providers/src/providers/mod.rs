@@ -60,6 +60,8 @@ pub mod minimax;
 pub mod buddy;
 #[cfg(feature = "teleagent")]
 pub mod teleagent;
+#[cfg(feature = "orcarouter")]
+pub mod orcarouter;
 #[cfg(feature = "raccoon")]
 pub mod raccoon;
 #[cfg(feature = "trae")]
@@ -221,6 +223,10 @@ pub fn registry() -> Vec<BoxProvider> {
     // TeleAgent（中国电信星辰超级智能体，云端 API + 每请求签名）
     #[cfg(feature = "teleagent")]
     list.push(Box::new(teleagent::TeleagentProvider));
+
+    // OrcaRouter（OpenAI 兼容 meta-router；免费档是 issue #367 的诉求）
+    #[cfg(feature = "orcarouter")]
+    list.push(Box::new(orcarouter::OrcarouterProvider));
 
     list
 }
