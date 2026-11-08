@@ -210,6 +210,12 @@ pub fn build_auth_headers(
             headers.push((key.to_string(), value.to_string()));
         }
     }
+    // `X-QwenWork-*` 官方身份头（issue #467）：千问办公按客户端身份做灰度/版本门，
+    // 只带 COSY 签名头会被判「非官方客户端」而 403。**只在 qwenwork 站点发** ——
+    // Qoder 那边官方客户端不发这组，混进去反而多一组可被校验的指纹。
+    if let Some(extra) = site.qwenwork_client_headers() {
+        headers.extend(extra);
+    }
     Ok(headers)
 }
 
@@ -382,4 +388,97 @@ fn rsa_encrypt_base64(plaintext: &str) -> Result<String, GatewayError> {
 /// 生成一个不可猜测的 UUID v4（供会话/记录标识使用）。
 pub fn random_uuid() -> Result<String, GatewayError> {
     machine::random_uuid()
+}
+
+#[cfg(test)]
+mod qwenwork_client_header_tests {
+    use super::*;
+
+    fn headers_for(site: Site) -> Vec<(String, String)> {
+        let identity = CosyIdentity {
+            user_id: "10001",
+            auth_token: "token-abc",
+            name: "demo",
+            email: "",
+            machine_id: "machine-xyz",
+        };
+        let url = format!("{}algo/api/v2/model/list?Encode=1", site.gateway());
+        build_auth_headers(None, &url, &identity, site).expect("签名应当成功")
+    }
+
+    fn find(headers: &[(String, String)], name: &str) -> Option<String> {
+        headers
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.clone())
+    }
+
+    /// issue #467 的核心断言：qwenwork 必须带 `X-QwenWork-*` 六个头。
+    ///
+    /// 上游按客户端身份做灰度/版本门，缺这组就是「目录刷新 403、手工带全头 200」。
+    #[test]
+    fn a_qwenwork_site_sends_the_official_client_headers() {
+        for site in [Site::QwenworkCn, Site::QwenworkIntl] {
+            let headers = headers_for(site);
+            assert_eq!(find(&headers, "X-QwenWork-Version").as_deref(), Some("1.4.0"), "{site:?}");
+            assert_eq!(
+                find(&headers, "X-QwenWork-Release-Version").as_deref(),
+                Some("1.4.0-26102705"),
+                "{site:?}"
+            );
+            assert_eq!(find(&headers, "X-QwenWork-Build").as_deref(), Some("26102705"), "{site:?}");
+            assert_eq!(find(&headers, "X-QwenWork-Platform").as_deref(), Some("win"), "{site:?}");
+            assert_eq!(find(&headers, "X-QwenWork-Arch").as_deref(), Some("x64"), "{site:?}");
+            assert_eq!(find(&headers, "X-QwenWork-Channel").as_deref(), Some("stable"), "{site:?}");
+        }
+    }
+
+    /// Qoder 官方客户端**不发**这组头 —— 混进去反而多一组可被校验的指纹。
+    #[test]
+    fn a_qoder_site_does_not_send_them() {
+        for site in [Site::QoderCn, Site::QoderIntl] {
+            let headers = headers_for(site);
+            assert!(find(&headers, "X-QwenWork-Version").is_none(), "{site:?} 不该发");
+        }
+    }
+
+    /// release 与 build 必须**成对**：build 是 release 里 `-` 之后那段。
+    /// 两者各写一个值会让上游的版本校验对不上。
+    #[test]
+    fn the_release_version_and_build_are_consistent() {
+        let release = crate::providers::qoder::endpoints::QWENWORK_RELEASE_VERSION;
+        let build = crate::providers::qoder::endpoints::QWENWORK_BUILD;
+        let tail = release.split('-').last().expect("release 应含 - 分隔");
+        assert_eq!(tail, build, "build 必须是 release 里 - 之后那段");
+        // 版本前缀也要与 IDE 版本一致
+        let head = release.split('-').next().expect("release 应含 - 分隔");
+        assert_eq!(head, crate::providers::qoder::endpoints::QWENWORK_IDE_VERSION);
+    }
+
+    /// 签名路径仍然正确（issue 列的第一条排查项）：去掉 `/algo`、不含查询串。
+    #[test]
+    fn the_signature_path_strips_algo_and_the_query() {
+        let site = Site::QwenworkCn;
+        let url = format!("{}algo/api/v2/model/list?Encode=1", site.gateway());
+        assert_eq!(signature_path(&url).expect("应可解析"), "/api/v2/model/list");
+    }
+
+    /// GET 的 bodyhash / bodylength 必须与「实际发出空 body」一致 ——
+    /// 签名覆盖的 body 与实际 body 不一致是 403 的常见成因。
+    #[test]
+    fn a_get_request_signs_an_empty_body() {
+        let site = Site::QwenworkCn;
+        let identity = CosyIdentity {
+            user_id: "10001",
+            auth_token: "token-abc",
+            name: "demo",
+            email: "",
+            machine_id: "machine-xyz",
+        };
+        let url = format!("{}algo/api/v2/model/list?Encode=1", site.gateway());
+        let headers = build_auth_headers(None, &url, &identity, site).expect("签名应当成功");
+        let empty_md5 = format!("{:x}", Md5::digest(b""));
+        assert_eq!(find(&headers, "Cosy-Bodyhash").as_deref(), Some(empty_md5.as_str()));
+        assert_eq!(find(&headers, "Cosy-Bodylength").as_deref(), Some("0"));
+    }
 }

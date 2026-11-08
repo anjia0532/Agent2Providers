@@ -305,6 +305,39 @@ impl Site {
     }
 
     /// `Cosy-ClientType`。
+    /// `X-QwenWork-*` 官方客户端身份头（issue #467）。
+    ///
+    /// ── 为什么需要这一组 ────────────────────────────────────────
+    /// 千问办公**桌面客户端**会带一组 `X-QwenWork-*` 头标识自己的版本/平台/渠道。
+    /// 上游近期（2026-11）按客户端身份做灰度与版本门，只带 COSY 签名头的请求会
+    /// 被判为「非官方客户端」而 403 —— 症状是**目录刷新 403、手工带全头的请求 200**，
+    /// 与 issue #467 完全一致（同账号同凭据、换代理/直连都无效、两个插件版本都复现）。
+    ///
+    /// ── 值从哪来 ────────────────────────────────────────────────
+    /// 2026-10-31 解包千问办公 1.4.0 客户端（`out/main/main.js` 的
+    /// `getQwenWorkClientHeaders()`）。参考实现 `dumate2api` 于 2026-11-06 补入同一组。
+    ///
+    /// ⚠️ 官方**没有**发 `X-QwenWork-App-Mode`（其取值来自运行时配置，解包里没有
+    /// 字面量）。这里**不猜一个假值发出去** —— 参考实现同样只发有确切依据的六个。
+    ///
+    /// 上游再换版本时改这三个常量即可（不要按站点拆：两个地区共用同一客户端）。
+    pub fn qwenwork_client_headers(self) -> Option<Vec<(String, String)>> {
+        if !self.is_qwenwork() {
+            return None;
+        }
+        Some(vec![
+            ("X-QwenWork-Version".to_string(), QWENWORK_IDE_VERSION.to_string()),
+            (
+                "X-QwenWork-Release-Version".to_string(),
+                QWENWORK_RELEASE_VERSION.to_string(),
+            ),
+            ("X-QwenWork-Build".to_string(), QWENWORK_BUILD.to_string()),
+            ("X-QwenWork-Platform".to_string(), QWENWORK_PLATFORM.to_string()),
+            ("X-QwenWork-Arch".to_string(), QWENWORK_ARCH.to_string()),
+            ("X-QwenWork-Channel".to_string(), QWENWORK_CHANNEL.to_string()),
+        ])
+    }
+
     pub fn cosy_client_type(self) -> &'static str {
         match self {
             Site::QoderCn | Site::QoderIntl => "5",
@@ -556,6 +589,19 @@ fn qwenwork_fallback_models() -> Vec<Value> {
 
 /// Qoder 的 COSY 协议版本（既有实现，不动）。
 const COSY_VERSION_QODER: &str = "1.1.38";
+
+// ── 千问办公桌面客户端身份（issue #467）────────────────────────────
+// 上游近期按客户端身份做灰度/版本门，只带 COSY 签名头会被判「非官方客户端」而 403。
+// 值来自 2026-10-31 解包千问办公 1.4.0 客户端（out/main/main.js 的
+// getQwenWorkClientHeaders()）；参考实现 dumate2api 于 2026-11-06 补入同一组。
+pub(crate) const QWENWORK_IDE_VERSION: &str = "1.4.0";
+// 与 QWENWORK_BUILD **成对**：build 是 release 里 `-` 之后那段，两者不能各写一个值。
+pub(crate) const QWENWORK_RELEASE_VERSION: &str = "1.4.0-26102705";
+pub(crate) const QWENWORK_BUILD: &str = "26102705";
+// 平台按**宿主**上报（官方 Windows 客户端发 win）。
+pub(crate) const QWENWORK_PLATFORM: &str = "win";
+pub(crate) const QWENWORK_ARCH: &str = "x64";
+pub(crate) const QWENWORK_CHANNEL: &str = "stable";
 
 /// 设备授权页路径。**四站同名同参**，只有主机名不同。
 ///
