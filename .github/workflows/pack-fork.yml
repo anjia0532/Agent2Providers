@@ -2,19 +2,19 @@ name: pack-fork
 on:
   workflow_dispatch:
 jobs:
-  windows:
-    runs-on: windows-latest
+  linux:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: beta
       - uses: dtolnay/rust-toolchain@stable
-      - name: install nasm
-        run: choco install nasm -y --no-progress
+      - name: toolchain
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq nasm cmake
       - name: build and pack
         run: node scripts/pack.mjs
       - uses: actions/upload-artifact@v4
         with:
-          name: plugin-windows
+          name: plugin-linux
           path: dist/*.zip
           if-no-files-found: error
