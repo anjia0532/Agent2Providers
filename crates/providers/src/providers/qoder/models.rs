@@ -15,8 +15,11 @@
 //! 且同名模型的意义也不同。缓存按 [`Site`] 分开。
 //!
 //! ── 千问办公的目录形状与 Qoder 不同 ─────────────────────────
-//! Qoder：`{"chat": [ {key, display_name, enable, price_factor, …} ]}`，
-//! 只列 `enable` 为真的条目，场景是 `app` + `chat` 合并。
+//! Qoder：`{"chat": [ {key, display_name, enable, price_factor, …} ], "app": [...]}`，
+//! **`chat` 是主目录，`app` 只补 `chat` 没有的条目**（同 key 以 `chat` 的
+//! 价格 / 权限 / 元数据为准）。QoDuck（上游 key `lmodel`）2026-11 上线时
+//! 只出现在 `app` 场景 —— 只读 `chat` 会让它整条缺失。不合并 inline /
+//! quest / BYOK 等其它场景。
 //! 千问办公：`{"qwork": [ {key, display_name, max_input_tokens, …} ]}`，
 //! **整份目录都在 `qwork` 这一个场景里**（含上游标了 `enable: false` 的），
 //! 所以要读的那一个数组与「要不要过滤 enable」都由 [`Site`] 决定。
@@ -101,6 +104,9 @@ fn qoder_fallback(site: Site) -> Vec<Value> {
         ("GLM-5.3-Flash", "gfmodel", true, true, &[], true, false, "0.1"),
         ("DeepSeek-V4-Pro", "dmodel", true, true, &[], true, false, "0.8"),
         ("DeepSeek-Flash", "dfmodel", true, true, &[], true, false, "0.2"),
+        // QoDuck：2026-11 上线的匿名模型，双区都有，上游 key `lmodel`。
+        // 静态表里也保留一条，断网 / 尚未拉到新目录时仍能点名与转发。
+        ("QoDuck", "lmodel", true, true, &["low", "high", "xhigh"], true, true, "0"),
         ("MiniMax-M3", "mmodel", false, false, &[], true, false, "0.2"),
     ];
     let cn: &[(&str, &str, bool, bool, &[&str], bool, bool, &str)] = &[
@@ -113,6 +119,8 @@ fn qoder_fallback(site: Site) -> Vec<Value> {
         ("DeepSeek-Flash", "dfmodel", false, false, &[], false, false, "0.2"),
         ("GLM-5.3", "gmodel", true, false, &[], true, false, "0.6"),
         ("Kimi-K2.8-Preview", "kmodel", true, false, &[], true, false, "0.3"),
+        // 双区都有；参考实现的双区目录同样合并 `app` 场景。
+        ("QoDuck", "lmodel", true, true, &["low", "high", "xhigh"], true, true, "0"),
         ("MiniMax-M3", "mmodel", false, false, &[], false, false, "0.2"),
     ];
     let rows = if site == Site::QoderCn { cn } else { global };
@@ -612,28 +620,44 @@ fn envelope_error(payload: &Value) -> Option<String> {
 /// 于是客户端看到的名称可读，请求时再映射回 `key`。
 fn parse_catalog(payload: &Value, site: Site) -> Vec<Value> {
     let scene = site.model_scene();
-    let rows: &[Value] = match scene {
+    let mut rows: Vec<&Value> = Vec::new();
+    match scene {
         Some(name) => {
-            match payload.get(name).and_then(Value::as_array) {
-                Some(items) => items,
-                None => return Vec::new(),
+            if let Some(items) = payload.get(name).and_then(Value::as_array) {
+                rows.extend(items.iter());
             }
         }
         None => {
-            match payload.get("chat").and_then(Value::as_array) {
-                Some(items) => items,
-                None => return Vec::new(),
+            // Qoder 的对话目录 = `chat` + `app` 独有条目。官方桌面端的
+            // 模型选择器会读 `app`，QoDuck（`lmodel`）2026-11 上线时就只在
+            // `app` 里；只取 `chat` 会把它整条漏掉（参考实现
+            // `dialogue_models` 同一口径）。`chat` 先入，同 key 的 `app`
+            // 条目随后被 key 去重跳过，价格 / 权限不会被覆盖。
+            for name in ["chat", "app"] {
+                if let Some(items) = payload.get(name).and_then(Value::as_array) {
+                    rows.extend(items.iter());
+                }
             }
         }
-    };
+    }
+    if rows.is_empty() {
+        return Vec::new();
+    }
     let mut models: Vec<Value> = Vec::new();
     let mut seen: Vec<String> = Vec::new();
+    let mut seen_keys: Vec<String> = Vec::new();
     for item in rows {
         let key = item.get("key").and_then(Value::as_str).unwrap_or("").trim();
         let display = item.get("display_name").and_then(Value::as_str).unwrap_or("").trim();
         if key.is_empty() || display.is_empty() {
             continue;
         }
+        // 同 key 以先出现的场景为准（Qoder 是 `chat` 优先，`app` 只补缺）。
+        let lowered_key = key.to_lowercase();
+        if seen_keys.iter().any(|known| known == &lowered_key) {
+            continue;
+        }
+        seen_keys.push(lowered_key);
         let id: String = display.chars().filter(|ch| !ch.is_whitespace()).collect();
         if id.is_empty() {
             continue;
@@ -767,4 +791,103 @@ fn js_truthy(value: &Value) -> bool {
 #[allow(dead_code)]
 pub fn count() -> usize {
     list().len()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::endpoints::Site;
+    use super::*;
+    use serde_json::json;
+
+    fn ids(models: &[Value]) -> Vec<&str> {
+        models
+            .iter()
+            .filter_map(|model| model.get("id").and_then(Value::as_str))
+            .collect()
+    }
+
+    #[test]
+    fn qoder_catalog_merges_app_only_entries_after_chat() {
+        let payload = json!({
+            "chat": [
+                { "key": "qmodel", "display_name": "Chat Model", "enable": true, "price_factor": 0.5 }
+            ],
+            "app": [
+                // 同 key：chat 优先，display_name / price_factor / enable 都不被覆盖
+                { "key": "qmodel", "display_name": "App Duplicate", "enable": false, "price_factor": 9.9 },
+                {
+                    "key": "lmodel",
+                    "display_name": "QoDuck",
+                    "enable": true,
+                    "is_vl": true,
+                    "is_reasoning": true,
+                    "price_factor": 0.0,
+                    "context_config": {
+                        "1M": { "token_count": 1000000 },
+                        "200K": { "token_count": 200000, "is_default": true }
+                    },
+                    "thinking_config": { "enabled": { "efforts": { "low": {}, "high": {}, "xhigh": {} } } }
+                }
+            ],
+            "inline": [{ "key": "inline", "display_name": "Inline" }],
+            "quest": [{ "key": "quest", "display_name": "Quest" }]
+        });
+
+        let models = parse_catalog(&payload, Site::QoderIntl);
+        // 对外 id 会去掉展示名里的空白（`Chat Model` → `ChatModel`）
+        assert_eq!(ids(&models), vec!["ChatModel", "QoDuck"]);
+
+        let chat = &models[0];
+        assert_eq!(chat["upstreamKey"], "qmodel");
+        assert_eq!(chat["enabled"], true);
+        assert_eq!(chat["credits"], "x0.5 credits");
+
+        let duck = &models[1];
+        assert_eq!(duck["upstreamKey"], "lmodel");
+        assert_eq!(duck["enabled"], true);
+        assert_eq!(duck["visibility"], "shown");
+        assert_eq!(duck["supportsImages"], true);
+        assert_eq!(duck["credits"], "x0 credits");
+        assert_eq!(duck["maxInputTokens"], 1000000);
+        assert_eq!(
+            duck["efforts"].as_array().map(Vec::len),
+            Some(3),
+            "QoDuck 的三个思考档位都要保留"
+        );
+    }
+
+    #[test]
+    fn qoder_app_scene_alone_is_enough() {
+        let payload = json!({
+            "app": [{ "key": "lmodel", "display_name": "QoDuck", "enable": true }]
+        });
+        let models = parse_catalog(&payload, Site::QoderCn);
+        assert_eq!(ids(&models), vec!["QoDuck"]);
+    }
+
+    #[test]
+    fn qwenwork_catalog_does_not_merge_app_scene() {
+        let payload = json!({
+            "qwork": [{ "key": "q1", "display_name": "Q1", "enable": true }],
+            "app": [{ "key": "lmodel", "display_name": "QoDuck", "enable": true }]
+        });
+        let models = parse_catalog(&payload, Site::QwenworkCn);
+        assert_eq!(ids(&models), vec!["Q1"]);
+    }
+
+    #[test]
+    fn qoduck_is_in_static_fallback_for_both_qoder_sites() {
+        for site in [Site::QoderCn, Site::QoderIntl] {
+            let models = fallback(site);
+            let duck = models
+                .iter()
+                .find(|model| model.get("id").and_then(Value::as_str) == Some("QoDuck"))
+                .expect("QoDuck 必须在静态兜底里");
+            assert_eq!(duck["upstreamKey"], "lmodel");
+            assert_eq!(duck["visibility"], "shown");
+            assert_eq!(duck["enabled"], true);
+            assert_eq!(duck["credits"], "x0 credits");
+            assert_eq!(duck["supportsImages"], true);
+        }
+    }
 }
