@@ -252,6 +252,63 @@ fn encode_query(value: &str) -> String {
     out
 }
 
+/// 账号 secret → portal 凭据。**两条来源都要能用**：
+///
+/// · 本机导入：从客户端 cookie 库读 `operationToken` / `operToken`；
+/// · 手工粘贴：`token` 本身就是 `operationToken`（2026-11-10 实测两者同为 647 字符），
+///   `userId` 从 JWT 的 `userId` 声明取；`operToken` 不带也能用 —— 实测只发
+///   `X-Token` + `userId` + `Cookie: operationToken=…` 就回 200 且 `pointsBalance` 有值。
+///
+/// 早期版本只认本机导入，导致「粘贴登录态」加进来的账号永远查不了余额：
+/// 明明 token 一模一样，却因为缺 cookie 库被拦在门外。
+fn auth_of(secret: &Value) -> Result<PortalAuth, String> {
+    if let Some(scope) = scope_of(secret) {
+        return read_portal_auth(&scope).ok_or_else(|| {
+            "读不到积分凭据（cookie）：TeleAgent 客户端开着时会锁住 cookie 库，请关闭客户端后重试；或在桌面端重新登录".to_string()
+        });
+    }
+    let token = secret
+        .get("token")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .ok_or_else(|| "这个账号没有 token，无法查询积分；请重新导入登录态".to_string())?;
+    let user_id = user_id_of_token(token)
+        .or_else(|| {
+            secret
+                .get("userId")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+                .map(str::to_string)
+        })
+        .ok_or_else(|| {
+            "token 里没有 userId 声明，也没有单独提供 userId，无法查询积分；请重新导入登录态".to_string()
+        })?;
+    Ok(PortalAuth {
+        user_id,
+        operation_token: token.to_string(),
+        oper_token: String::new(),
+    })
+}
+
+/// 从 token 的 JWT 载荷里取 `userId`（`<tenant>:<JWT>` 与纯 JWT 都认）。
+fn user_id_of_token(token: &str) -> Option<String> {
+    use base64::Engine as _;
+    let jwt = token.rsplit_once(':').map(|(_, rest)| rest).unwrap_or(token);
+    let payload = jwt.split('.').nth(1)?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload.trim_end_matches('='))
+        .ok()?;
+    let value: Value = serde_json::from_slice(&bytes).ok()?;
+    value
+        .get("userId")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_string)
+}
+
 /// 账号 secret → scope（本机导入的账号才有）。
 pub fn scope_of(secret: &Value) -> Option<String> {
     if !secret.get("desktop").and_then(Value::as_bool).unwrap_or(false) {
@@ -272,12 +329,7 @@ pub fn scope_of(secret: &Value) -> Option<String> {
 /// 由调用方显示成失败行。
 pub async fn query_usage(ctx: &PluginCtx, account: &str) -> Result<Value, String> {
     let secret = super::secret_of(ctx, ID, account).await?;
-    let scope = scope_of(&secret).ok_or_else(|| {
-        "这个账号不是本机导入的，没有积分凭据；请在 TeleAgent 桌面端登录后重新导入".to_string()
-    })?;
-    let auth = read_portal_auth(&scope).ok_or_else(|| {
-        "读不到积分凭据（cookie）：TeleAgent 客户端开着时会锁住 cookie 库，请关闭客户端后重试；或在桌面端重新登录".to_string()
-    })?;
+    let auth = auth_of(&secret)?;
     let points = portal_get(&auth, "/points/detail", &[]).await?;
     let center = portal_get(&auth, "/companyStore/userCenter", &[]).await.unwrap_or(Value::Null);
 
@@ -347,12 +399,7 @@ fn soonest_expiry(points: &Value) -> Option<String> {
 /// 每日签到（幂等：先查状态，已领就直接返回，**不碰领取接口**）。
 pub async fn claim_daily(ctx: &PluginCtx, account: &str) -> Result<proto::CheckinReport, String> {
     let secret = super::secret_of(ctx, ID, account).await?;
-    let scope = scope_of(&secret).ok_or_else(|| {
-        "这个账号不是本机导入的，没有积分凭据；请在 TeleAgent 桌面端登录后重新导入".to_string()
-    })?;
-    let auth = read_portal_auth(&scope).ok_or_else(|| {
-        "读不到积分凭据（cookie）：TeleAgent 客户端开着时会锁住 cookie 库，请关闭客户端后重试；或在桌面端重新登录".to_string()
-    })?;
+    let auth = auth_of(&secret)?;
 
     let before = portal_get(&auth, "/companyStore/v2/checkDayTask", &[]).await?;
     let task = before.get("daily_task").cloned().unwrap_or(Value::Null);
@@ -450,5 +497,47 @@ mod tests {
         let cookies = read_cookie_copy(&db).expect("空库应当读成空表");
         assert!(cookies.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 手工粘贴的账号：token 本身就是 operationToken，userId 从 JWT 声明取。
+    ///
+    /// 回归点：早期只认本机导入，粘贴进来的账号一律报「没有积分凭据」，
+    /// 而实测同一个 token 直接打 portal 是 200。
+    #[test]
+    fn a_pasted_token_supplies_portal_credentials() {
+        use base64::Engine as _;
+        let payload = json!({ "userId": "2119666955975630848", "tenant": "Em9xR4" });
+        let body = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string());
+        let jwt = format!("eyJhbGciOiJIUzI1NiJ9.{body}.sig");
+        let token = format!("Em9xR4:{jwt}");
+        assert_eq!(
+            user_id_of_token(&token).as_deref(),
+            Some("2119666955975630848"),
+            "带 tenant 前缀也要能取到 userId"
+        );
+        assert_eq!(user_id_of_token(&jwt).as_deref(), Some("2119666955975630848"));
+        let auth = auth_of(&json!({ "token": token })).expect("应当能从 token 取到凭据");
+        assert_eq!(auth.user_id, "2119666955975630848");
+        assert!(auth.oper_token.is_empty(), "operToken 不是必需的");
+        assert!(auth.operation_token.starts_with("Em9xR4:"));
+    }
+
+    /// 没有 userId 的 token 要报出具体原因，而不是一句「不是本机导入」。
+    #[test]
+    fn a_token_without_user_id_is_rejected_with_a_reason() {
+        use base64::Engine as _;
+        let body = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(json!({ "sub": "x" }).to_string());
+        let err = auth_of(&json!({ "token": format!("t.h.{body}") })).unwrap_err();
+        assert!(err.contains("userId"), "报错要点名缺 userId：{err}");
+    }
+
+    /// 显式传入的 userId 优先于（缺失的）JWT 声明。
+    #[test]
+    fn an_explicit_user_id_is_used_when_the_token_has_none() {
+        use base64::Engine as _;
+        let body = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(json!({ "sub": "x" }).to_string());
+        let auth = auth_of(&json!({ "token": format!("t.h.{body}"), "userId": "42" }))
+            .expect("给了 userId 就应当能用");
+        assert_eq!(auth.user_id, "42");
     }
 }
