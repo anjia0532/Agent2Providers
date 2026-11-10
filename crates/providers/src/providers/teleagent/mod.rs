@@ -66,19 +66,22 @@ pub const CHAT_PATH: &str = "/superCowork/sapi/api/v1/chat/completions";
 
 /// `X-App-Version` 与 UA 里报的客户端版本**兜底值**。
 ///
-/// 正常路径是运行时读客户端自己的版本（`desktop::app_version`），读不到才用这里
-/// —— 与客户端版本无关的请求不会因此变错，但也不假装知道。
-pub const APP_VERSION: &str = "2.0.0";
+/// 正常路径是运行时读客户端自己的版本（`desktop::app_version`），读不到才用这里。
+/// 上游自 2026-11 起加了**版本闸**：报 `2.0.0` 直接 `403 / 40301 检测到客户端
+/// 版本过低`，报 `3.0.0` 正常 200（同 token、同指纹实测），所以兜底值必须跟得上。
+pub const APP_VERSION: &str = "3.0.0";
 
 /// User-Agent（照抄参考实现实测可用的那一串：把请求伪装成 opencode 客户端）
 pub const USER_AGENT: &str =
     "opencode/1.2.27 ai-sdk/provider-utils/3.0.20 runtime/bun/1.3.10";
 
-/// 一次请求要用到的三条凭据（已解析成最终形态）。
+/// 一次请求要用到的条凭据（已解析成最终形态）。
 struct LiveCredentials {
     token: String,
     device_id: String,
     install_id: String,
+    /// 上报给上游的客户端版本（签名与 `X-App-Version` 头必须一致）。
+    app_version: String,
 }
 
 /// 从账号 secret 里读三条凭据（**手工粘贴**的那种）。
@@ -133,10 +136,20 @@ async fn resolve_credentials(secret: &Value) -> Result<LiveCredentials, String> 
             token: creds.token,
             device_id: creds.device_id,
             install_id: creds.install_id,
+            // 本机导入：版本号跟着客户端走，客户端升级后自动跟上
+            app_version: desktop::app_version(&data),
         });
     }
     let (token, device_id, install_id) = credentials_of(secret)?;
-    Ok(LiveCredentials { token, device_id, install_id })
+    // 手工粘贴：允许在 secret 里钉住版本号（`appVersion`），没写就用兜底值
+    let app_version = optional_field(secret, &["appVersion", "app_version"])
+        .unwrap_or_else(|| APP_VERSION.to_string());
+    Ok(LiveCredentials {
+        token,
+        device_id,
+        install_id,
+        app_version,
+    })
 }
 
 /// 网关 apiKey 的四级解析：按家配置 → 环境变量 → 桌面端账号配置 → 安装包。
@@ -282,10 +295,7 @@ impl Provider for TeleagentProvider {
             }
             let payload = body.to_string();
 
-            let app_version = match desktop::data_dir() {
-                Some(data) => desktop::app_version(&data),
-                None => APP_VERSION.to_string(),
-            };
+            let app_version = creds.app_version.clone();
             let nonce = sign::new_nonce();
             let timestamp = format!("{}", http::now_ms() / 1000);
             let signed = sign::sign(
@@ -384,6 +394,16 @@ impl Provider for TeleagentProvider {
                         ),
                     };
                 }
+                // 客户端版本闸：跟登录态无关，重登只会白折腾
+                40301 => {
+                    return proto::ErrorClass::Fatal {
+                        status: 403,
+                        message: format!(
+                            "{message}（**不是登录失效**：上游有最低客户端版本要求，当前上报 {APP_VERSION}；升级 TeleAgent 后重新导入，或在账号 secret 里加 appVersion 覆盖）"
+                        ),
+                        upstream_code: Some(code),
+                    };
+                }
                 // 封禁 / 停用：封的是模型调用通道，重登解决不了
                 40109 | 40110 => {
                     return proto::ErrorClass::Fatal {
@@ -435,7 +455,9 @@ impl Provider for TeleagentProvider {
         }
 
         if status == 401 || status == 403 {
-            let hint = if lowered.contains("sign")
+            let hint = if lowered.contains("版本") || lowered.contains("version") {
+                "（这是**客户端版本闸**，不是登录失效：别重登，把上报的客户端版本调上去即可）"
+            } else if lowered.contains("sign")
                 || lowered.contains("signature")
                 || lowered.contains("签名")
             {
@@ -616,11 +638,15 @@ impl Provider for TeleagentProvider {
                 .map(str::to_string)
                 .unwrap_or_else(|| "TeleAgent".to_string());
             let expires_at = jwt_expiry_ms(&token);
+            // 版本闸：允许调用方显式给 appVersion（Linux 网关上没客户端，读不到）
+            let app_version = optional_field(&payload, &["appVersion", "app_version"])
+                .unwrap_or_else(|| APP_VERSION.to_string());
             let secret = json!({
                 "token": token,
                 "deviceId": device_id,
                 "installId": install_id,
                 "name": name,
+                "appVersion": app_version,
             });
             let mut public = json!({
                 "name": name,
@@ -1199,6 +1225,27 @@ mod tests {
             panic!("封禁应当归到 Fatal");
         };
         assert!(message.contains("封禁"), "实际：{message}");
+    }
+
+    /// 版本闸（403 / 40301）不能被说成「登录失效」—— 用户会白重登一遍。
+    #[test]
+    fn a_client_version_gate_is_not_a_login_failure() {
+        let gated = TeleagentProvider.classify(
+            403,
+            &json!({ "code": 40301, "message": "检测到客户端版本过低，请检查新版本并升级以继续使用" }),
+        );
+        let proto::ErrorClass::Fatal { message, .. } = gated else {
+            panic!("版本闸应当归到 Fatal");
+        };
+        assert!(message.contains("不是登录失效"), "实际：{message}");
+        assert!(message.contains(APP_VERSION), "要说出当前上报的版本：{message}");
+
+        // 上游只给文案、不给业务码时，也不能再劝用户重登
+        let plain = TeleagentProvider.classify(403, &json!({ "message": "检测到客户端版本过低" }));
+        let proto::ErrorClass::TokenExpired { message } = plain else {
+            panic!("无码时沿用原分类");
+        };
+        assert!(message.contains("版本闸"), "实际：{message}");
     }
 
     /// 业务码只在正文里时也要认出来（上游有时不回 `code` 字段）。
